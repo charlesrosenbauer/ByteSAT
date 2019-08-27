@@ -4,132 +4,108 @@
 
 
 
+
 typedef struct{
-  uint64_t space[4];
+  uint64_t bits[4];
 }SAT;
 
-typedef struct{
-  uint8_t pos;
-  uint8_t neg;
-}CONSTRAINT;
-
-static const uint64_t SATFULL[] = {0xffffffffffffffff,
-                                   0xffffffffffffffff,
-                                   0xffffffffffffffff,
-                                   0xffffffffffffffff};
 
 
 
-/*
-  This is *mostly* working.
 
-  There seems to still be a bug where bits 4 and 5 in the constraints are
-    getting confused. I have absolutely no idea why. Probably some stupid
-    UB optimization reasons. This code is full of little compiler gotchas.
+SAT constrain(uint8_t pos, uint8_t neg){
+  static const uint64_t ks[6] = {0xAAAAAAAAAAAAAAAA,
+                                 0x6666666666666666,
+                                 0xf0f0f0f0f0f0f0f0,
+                                 0xff00ff00ff00ff00,
+                                 0xffff0000ffff0000,
+                                 0xffffffff00000000};
 
-  Everything else seems to mostly work fine though. For the most part.
-*/
-void constrain(SAT* s, CONSTRAINT c){
-  static const uint64_t ks[6] = {~0x5555555555555555,
-                                 ~0x3333333333333333,
-                                 ~0x0f0f0f0f0f0f0f0f,
-                                 ~0x00ff00ff00ff00ff,
-                                 ~0x0000ffff0000ffff,
-                                 ~0x00000000ffffffff};
+  SAT ret;
 
-  static const uint64_t FULL =    0xffffffffffffffff;
+  uint64_t p = 0;
+  p |= (pos &  1)?  ks[0] : 0;
+  p |= (pos &  2)?  ks[1] : 0;
+  p |= (pos &  4)?  ks[2] : 0;
+  p |= (pos &  8)?  ks[3] : 0;
+  p |= (pos & 16)?  ks[4] : 0;
+  p |= (pos & 32)?  ks[5] : 0;
+  printf("P: %lx\n", p);
 
+  uint64_t n = 0;
+  n |= (neg &  1)? ~ks[0] : 0;
+  n |= (neg &  2)? ~ks[1] : 0;
+  n |= (neg &  4)? ~ks[2] : 0;
+  n |= (neg &  8)? ~ks[3] : 0;
+  n |= (neg & 16)? ~ks[4] : 0;
+  n |= (neg & 32)? ~ks[5] : 0;
+  printf("N: %lx\n", n);
 
-  // No constraints, everything's fine.
-  if((c.pos == 0) && (c.neg == 0)) return;
+  uint64_t bits = p | n;
+  ret.bits[0] = ((neg & 64) | (neg & 128))? 0xffffffffffffffff : bits;
+  ret.bits[1] = ((pos & 64) | (neg & 128))? 0xffffffffffffffff : bits;
+  ret.bits[2] = ((neg & 64) | (pos & 128))? 0xffffffffffffffff : bits;
+  ret.bits[3] = ((pos & 64) | (pos & 128))? 0xffffffffffffffff : bits;
 
-  SAT pos;
-
-  // Constrain pos by all positive constraints
-  uint64_t posmall = 0;
-  for(int i = 0; i < 6; i++){
-    posmall |=  ks[i] & (0l - (0 != (c.pos & (1l << i))));
-  }
-
-  for(int i = 0; i < 4; i++) pos.space[i] = posmall;
-
-  uint64_t x6 = (0l - (0 != (c.pos &  64)));
-  pos.space[0] |= FULL & x6;
-  pos.space[1] |= 0     & x6;
-  pos.space[2] |= FULL & x6;
-  pos.space[3] |= 0     & x6;
-
-  uint64_t x7 = (0l - (0 != (c.pos & 128)));
-  pos.space[0] |= FULL & x7;
-  pos.space[1] |= FULL & x7;
-  pos.space[2] |= 0     & x7;
-  pos.space[3] |= 0     & x7;
-
-
-  SAT neg;
-
-  // Constrain neg by all negative constraints
-  uint64_t negmall = 0;
-  for(int i = 0; i < 6; i++){
-    negmall |= ~ks[i] & (0l - (0 != (c.neg & (1l << i))));
-  }
-
-  for(int i = 0; i < 4; i++) neg.space[i] = negmall;
-
-  uint64_t y6 = (0l - (0 != (c.neg &  64)));
-  neg.space[0] |= 0     & y6;
-  neg.space[1] |= FULL & y6;
-  neg.space[2] |= 0     & y6;
-  neg.space[3] |= FULL & y6;
-
-  uint64_t y7 = (0l - (0 != (c.neg & 128)));
-  neg.space[0] |= 0     & y7;
-  neg.space[1] |= 0     & y7;
-  neg.space[2] |= FULL & y7;
-  neg.space[3] |= FULL & y7;
-
-  //Merge pos, neg, and s
-  for(int i = 0; i < 4; i++){
-    s->space[i] &= (pos.space[i] | neg.space[i]);
-  }
+  return ret;
 }
 
 
-void runSAT(SAT* s, CONSTRAINT* cs, int cct){
-  for(int i = 0; i < cct; i++)
-    constrain(s, cs[i]);
+
+SAT and(SAT a, SAT b){
+  SAT ret;
+  for(int i = 0; i < 4; i++)
+    ret.bits[i] = a.bits[i] & b.bits[i];
+  return ret;
 }
 
+
+void printSAT(SAT x){
+  printf("X: %lx %lx %lx %lx\n\n", x.bits[0], x.bits[1], x.bits[2], x.bits[3]);
+}
 
 
 
 int main(){
 
+  SAT x;
+  for(int i = 0; i <  4; i++) x.bits[i] = 0xffffffffffffffff;
+
   /*
-    +1 +2 -3
-    -1 +3
-    -2 +3
+    Test code.
+    This is basically a SAT instance with a couple of AND gates that must
+    generate equal results, and some extra constraints to set the remaining
+    parameters to both be zero.
   */
-  CONSTRAINT cs[8];
-
-  cs[0].pos = 3; cs[0].neg = 4;
-  cs[1].pos = 4; cs[1].neg = 1;
-  cs[2].pos = 4; cs[2].neg = 2;
-
-  cs[3].pos = 0; cs[3].neg =   8;
-  cs[4].pos = 0; cs[4].neg =  16;
-  cs[5].pos = 0; cs[5].neg =  32;
-  cs[6].pos = 0; cs[6].neg =  64;
-  cs[7].pos = 0; cs[7].neg = 128;
-
-  for(int i = 0; i < 8; i++){
-    SAT s;
-    for(int i = 0; i < 4; i++)
-      s.space[i] = SATFULL[i];
-
-    runSAT(&s, cs, i+1);
-
-    printf("%16lx %16lx %16lx %16lx\n", s.space[0], s.space[1], s.space[2], s.space[3]);
-  }
+  // +1 +2 -3
+  x = and(x, constrain(0x03, 0x04));
+  printSAT(x);
+  // -1 +3
+  x = and(x, constrain(0x04, 0x01));
+  printSAT(x);
+  // -2 +3
+  x = and(x, constrain(0x04, 0x02));
+  printSAT(x);
+  // +4 +5 -6
+  x = and(x, constrain(0x18, 0x20));
+  printSAT(x);
+  // -4 +6
+  x = and(x, constrain(0x20, 0x08));
+  printSAT(x);
+  // -5 +6
+  x = and(x, constrain(0x20, 0x10));
+  printSAT(x);
+  // -3 +6
+  x = and(x, constrain(0x20, 0x04));
+  printSAT(x);
+  // +3 -6
+  x = and(x, constrain(0x04, 0x20));
+  printSAT(x);
+  // -7
+  x = and(x, constrain(0x00, 0x40));
+  printSAT(x);
+  // +8
+  x = and(x, constrain(0x00, 0x80));
+  printSAT(x);
 
 }
