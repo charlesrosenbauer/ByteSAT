@@ -10,4 +10,4 @@ This approach could be scaled to larger SAT problems, but scales exponentially w
 
 One nice thing about this technique is that it doesn't give you only a single satisfying state; rather it gives you a bitset corresponding to all satisfying states. If it gives you an array of just zeros, your SAT problem is unsatisfiable. No, you don't get a proof, that's too expensive. This is the cheap and dirty solution.
 
-I also plan to add benchmarks soon. Once again, when I get the chance.
+On my machine, this is able to run about 125 million clauses per second, though that number goes up by over a factor of 3 under certain circumstances, if the compiler can find a good way to vectorize multiple iterations together. This is roughly 8-28 clock cycles per clause.
