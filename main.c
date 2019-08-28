@@ -1,5 +1,6 @@
 #include "stdint.h"
 #include "stdio.h"
+#include "time.h"
 
 
 
@@ -30,7 +31,6 @@ SAT constrain(uint8_t pos, uint8_t neg){
   p |= (pos &  8)?  ks[3] : 0;
   p |= (pos & 16)?  ks[4] : 0;
   p |= (pos & 32)?  ks[5] : 0;
-  printf("P: %lx\n", p);
 
   uint64_t n = 0;
   n |= (neg &  1)? ~ks[0] : 0;
@@ -39,7 +39,6 @@ SAT constrain(uint8_t pos, uint8_t neg){
   n |= (neg &  8)? ~ks[3] : 0;
   n |= (neg & 16)? ~ks[4] : 0;
   n |= (neg & 32)? ~ks[5] : 0;
-  printf("N: %lx\n", n);
 
   uint64_t bits = p | n;
   ret.bits[0] = ((neg & 64) | (neg & 128))? 0xffffffffffffffff : bits;
@@ -62,6 +61,33 @@ SAT and(SAT a, SAT b){
 
 void printSAT(SAT x){
   printf("X: %lx %lx %lx %lx\n\n", x.bits[0], x.bits[1], x.bits[2], x.bits[3]);
+}
+
+
+void benchmark(int64_t n){
+  SAT x;
+  for(int i = 0; i < 4; i++) x.bits[i] = 0xffffffffffffffff;
+
+  // Generate random constraints
+  uint64_t rstate = 7596458374521;
+  uint8_t poss[8192];
+  uint8_t negs[8192];
+  for(int i = 0; i < 8192; i++){
+    rstate  = (781708961081 * rstate) + 5781967161115;
+    int rot =  rstate >> 58;
+    rstate  = (rstate >> rot) | (rstate << (64 - rot));
+    poss[i] =  rstate         & 0xff;
+    negs[i] = (rstate >>   8) & 0xff;
+  }
+
+  // Run the actual loop
+  time_t t = clock();
+  for(int64_t i = 0; i < n; i++){
+    x = and(x, constrain(poss[i%8192], negs[i%8192]));
+  }
+  printSAT(x);
+  t = clock() - t;
+  printf("%li iterations takes %f seconds to run.\n", n, ((double)t)/CLOCKS_PER_SEC);
 }
 
 
@@ -108,4 +134,5 @@ int main(){
   x = and(x, constrain(0x00, 0x80));
   printSAT(x);
 
+  benchmark(100000000);
 }
